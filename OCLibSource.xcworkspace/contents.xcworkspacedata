@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <FileRef
+      location = "group:darwin-xnu-master/XNU.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:libmalloc/libmalloc.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:CoreFoudationSrc/CoreFoudationSrc.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:libdispatch-913.60.2/libdispatch.xcodeproj">
+   </FileRef>
+</Workspace>
