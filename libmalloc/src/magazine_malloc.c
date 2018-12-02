@@ -159,7 +159,8 @@
  * allocation.  A tiny block with an msize of 3 would be 3 << SHIFT_TINY_QUANTUM
  * bytes in size.
  */
-typedef unsigned short msize_t;
+typedef unsigned int msize_t; //typedef unsigned short msize_t;
+
 
 typedef union {
 	void	*p;
@@ -2735,10 +2736,6 @@ tiny_malloc_from_region_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_in
 	BYTES_USED_FOR_TINY_REGION(aligned_address) = TINY_BYTES_FOR_MSIZE(msize);
 #if ASLR_INTERNAL
 	int offset_msize = malloc_entropy[0] & TINY_ENTROPY_MASK;
-#if DEBUG_MALLOC
-	if (getenv("MallocASLRForce")) offset_msize = strtol(getenv("MallocASLRForce"), NULL, 0) & TINY_ENTROPY_MASK;
-	if (getenv("MallocASLRPrint")) malloc_printf("Region: %p offset: %d\n", aligned_address, offset_msize);
-#endif
 #else
 	int offset_msize = 0;
 #endif
