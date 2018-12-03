@@ -658,7 +658,6 @@ typedef struct szone_s {				// vm_allocate()'d, so page-aligned to begin with.
 	unsigned			num_tiny_magazines_mask;
 	int				num_tiny_magazines_mask_shift;
 	magazine_t			*tiny_magazines; // array of per-processor magazines
-
 	uintptr_t			last_tiny_advise;
 
 	/* Regions for small objects */
@@ -669,12 +668,10 @@ typedef struct szone_s {				// vm_allocate()'d, so page-aligned to begin with.
 	region_hash_generation_t	srg[2];
 
 	unsigned			num_small_slots; // determined by physmem size
-
 	int				num_small_magazines;
 	unsigned			num_small_magazines_mask;
 	int				num_small_magazines_mask_shift;
 	magazine_t			*small_magazines; // array of per-processor magazines
-
 	uintptr_t			last_small_advise;
 
 	/* large objects: all the rest */

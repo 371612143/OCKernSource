@@ -7,25 +7,26 @@
 
 
 int main(int argc, const char * argv[]) {
-
-    void* memarry[255][1000];
-    unsigned int bytes = 255;
     
+#define tinyCount 2000
+    void* memarry[255][tinyCount];
+    void* small[tinyCount];
     for (int i = 0; i < 255; i++) {
-	for (int j = 0; j < 1000; j++)
-	memarry[i][j] = malloc(i);
-	//free(memarry[i]);
+	for (int j = 0; j < tinyCount; j++) {
+	    memarry[i][j] = malloc(255);
+	}
+	
     }
-    for (int i = 0; i < 100000; i++) {
-	//free(memarry[i]);
-    }
+ 
     for (int i = 257; i < 1008; i++) {
-	void *tinyMalloc = malloc(512);
+	small[i-257] = malloc(i);
     }
-    
-    void *smallMalloc = malloc(1024);
-    void *largerMalloc = malloc(127*1024);
-    NSLog(@"Hello, World!");
+    for (int i = 1009; i < 127*1024; i++) {
+	void *smallMalloc = malloc(i);
+    }
 
+    while (1) {
+	
+    }
     return 0;
 }
