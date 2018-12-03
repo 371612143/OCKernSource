@@ -18,15 +18,21 @@ int main(int argc, const char * argv[]) {
 	
     }
  
-    for (int i = 257; i < 1008; i++) {
-	small[i-257] = malloc(i);
+    for (int i = 0; i < 1000; i++) {
+	for (int j = 257; j < 1008; j++) {
+	    small[j-257] = malloc(j);
+	    if (i % 2 == 1) {
+		free(small[j-257]);
+	    }
+	}
+	
     }
     for (int i = 1009; i < 127*1024; i++) {
 	void *smallMalloc = malloc(i);
     }
 
     while (1) {
-	
+	malloc(128*1024);
     }
     return 0;
 }

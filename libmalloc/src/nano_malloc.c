@@ -165,10 +165,10 @@ typedef struct nano_meta_s {
     unsigned int		slot_madvised_log_page_count;
 	volatile uintptr_t		slot_current_base_addr;  //slot页面基址
 	volatile uintptr_t		slot_limit_addr;	//当前slot地址上边界
-	volatile size_t		slot_objects_mapped;   //可已分配的对象个数
+	volatile size_t		slot_objects_mapped;   //可分配的对象个数
 	volatile size_t		slot_objects_skipped;	//slot开始的时候会跳过多少个object开始使用
 	bitarray_t			slot_madvised_pages;
-    volatile uintptr_t		slot_bump_addr CACHE_ALIGN; // position on cache line distinct from that of slot_LIFO
+    volatile uintptr_t		slot_bump_addr CACHE_ALIGN; //开始分配数据的地址
     volatile boolean_t		slot_exhausted; //slot内存已经用尽
 	unsigned int		slot_bytes;  // 该slot中存储的bytes是多少(16、32、48...)
 	unsigned int		slot_objects; // 该slot中可以多少个object(slot总内存/slot_bytes)
@@ -358,7 +358,8 @@ segregated_band_grow(nanozone_t *nanozone, nano_meta_admin_t pMeta, unsigned int
 	
 	//meta初始化
 	if (0 == pMeta->slot_current_base_addr) { // First encounter?
-
+		//p = 0x000061800 01e0000  0x00006（20bit signature) 00010=2（5bit mag）18bitband 01e=0000 0001 1110
+		//其中1111 = 15 为slotid 后面17位为当前band的大小
 		u.fields.nano_signature = NANOZONE_SIGNATURE;
 		u.fields.nano_mag_index = mag_index;
 		u.fields.nano_band = 0;
@@ -433,8 +434,7 @@ divrem(unsigned long a, unsigned int b, unsigned int *remainder)
 	return a / b;
 }
 
-static INLINE void *
-segregated_next_block(nanozone_t *nanozone, nano_meta_admin_t pMeta, unsigned int slot_bytes, unsigned int mag_index)
+static void *segregated_next_block(nanozone_t *nanozone, nano_meta_admin_t pMeta, unsigned int slot_bytes, unsigned int mag_index)
 {
 	while (1) {
 		uintptr_t theLimit = pMeta->slot_limit_addr; // Capture the slot limit that bounds slot_bump_addr right now

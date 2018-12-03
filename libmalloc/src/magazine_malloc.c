@@ -159,7 +159,7 @@
  * allocation.  A tiny block with an msize of 3 would be 3 << SHIFT_TINY_QUANTUM
  * bytes in size.
  */
-typedef unsigned int msize_t; //typedef unsigned short msize_t;
+typedef unsigned short msize_t;
 
 
 typedef union {
@@ -682,13 +682,13 @@ typedef struct szone_s {				// vm_allocate()'d, so page-aligned to begin with.
 	size_t			num_bytes_in_large_objects;
 
 #if LARGE_CACHE
-	int				large_entry_cache_oldest;
-	int				large_entry_cache_newest;
+	int				large_entry_cache_oldest;  //大块内存的最旧缓存  通过hash求模算法形成一个环
+	int				large_entry_cache_newest;  //大块内存的最新缓存
 	large_entry_t		large_entry_cache[LARGE_ENTRY_CACHE_SIZE]; // "death row" for large malloc/free
 	boolean_t			large_legacy_reset_mprotect;
 	size_t			large_entry_cache_reserve_bytes;
 	size_t			large_entry_cache_reserve_limit;
-	size_t			large_entry_cache_bytes; // total size of death row, bytes
+	size_t			large_entry_cache_bytes; //缓存大块内存的总大小
 #endif
 
 	/* flag and limits pertaining to altered malloc behavior for systems with
@@ -5623,12 +5623,12 @@ large_malloc(szone_t *szone, size_t num_kernel_pages, unsigned char alignment,
 	range_to_deallocate.address = 0;
 
 #if LARGE_CACHE
-	if (size < LARGE_CACHE_SIZE_ENTRY_LIMIT) { // Look for a large_entry_t on the death-row cache?
+	if (size < LARGE_CACHE_SIZE_ENTRY_LIMIT) { //128M Look for a large_entry_t on the death-row cache?
 		SZONE_LOCK(szone);
 
 		int i, best = -1, idx = szone->large_entry_cache_newest, stop_idx = szone->large_entry_cache_oldest;
 		size_t best_size = SIZE_T_MAX;
-
+		//从最近释放的内存开始查找最合适的内存块，1.如果有大小刚好相等的缓存则查找成功，2.没有大小相等则找到大于要分配内存的最小一块，且最小块小于待分配内存的两倍 利用率>50
 		while (1) { // Scan large_entry_cache for best fit, starting with most recent entry
 			size_t this_size = szone->large_entry_cache[idx].size;
 			addr = (void *)szone->large_entry_cache[idx].address;
@@ -5654,13 +5654,13 @@ large_malloc(szone_t *szone, size_t num_kernel_pages, unsigned char alignment,
 			else
 				idx = LARGE_ENTRY_CACHE_SIZE - 1; // wrap idx
 		}
-
+		
+		//找到可用缓存后更新列表
 		if (best > -1 && (best_size - size) < size) { //limit fragmentation to 50%
 			addr = (void *)szone->large_entry_cache[best].address;
 			boolean_t was_madvised_reusable = szone->large_entry_cache[best].did_madvise_reusable;
 
-			// Compact live ring to fill entry now vacated at large_entry_cache[best]
-			// while preserving time-order
+			//更新环状列表
 			if (szone->large_entry_cache_oldest < szone->large_entry_cache_newest) {
 
 				// Ring hasn't wrapped. Fill in from right.
@@ -5700,7 +5700,8 @@ large_malloc(szone_t *szone, size_t num_kernel_pages, unsigned char alignment,
 				szone->large_entry_cache[best].size = 0;
 				szone->large_entry_cache[best].did_madvise_reusable = FALSE;
 			}
-
+			
+			//是否需要扩大已分配的内存hash表，减少冲突，增加命中概率
 			if ((szone->num_large_objects_in_use + 1) * 4 > szone->num_large_entries) {
 				// density of hash table too high; grow table
 				// we do that under lock to avoid a race
@@ -5710,12 +5711,13 @@ large_malloc(szone_t *szone, size_t num_kernel_pages, unsigned char alignment,
 					return NULL;
 				}
 			}
-
+			
+			//生成新的large_entry内存数据及信息，并插入到hash表中
 			large_entry.address = (vm_address_t)addr;
 			large_entry.size = best_size;
 			large_entry.did_madvise_reusable = FALSE;
 			large_entry_insert_no_lock(szone, large_entry);
-
+			//更新szone中large分配个数，和缓存信息
 			szone->num_large_objects_in_use ++;
 			szone->num_bytes_in_large_objects += best_size;
 			if (!was_madvised_reusable)
@@ -5737,17 +5739,8 @@ large_malloc(szone_t *szone, size_t num_kernel_pages, unsigned char alignment,
 			// Perform the madvise() outside the lock.
 			// Typically the madvise() is successful and we'll quickly return from this routine.
 			// In the unusual case of failure, reacquire the lock to unwind.
-#if TARGET_OS_EMBEDDED
-			// Ok to do this madvise on embedded because we won't call MADV_FREE_REUSABLE on a large
-			// cache block twice without MADV_FREE_REUSE in between.
-#endif
 			if (was_madvised_reusable && -1 == madvise(addr, size, MADV_FREE_REUSE)) {
 				/* -1 return: VM map entry change makes this unfit for reuse. */
-#if DEBUG_MADVISE
-				szone_error(szone, 0, "large_malloc madvise(..., MADV_FREE_REUSE) failed",
-							addr, "length=%d\n", size);
-#endif
-
 				SZONE_LOCK(szone);
 				szone->num_large_objects_in_use--;
 				szone->num_bytes_in_large_objects -= large_entry.size;
@@ -5783,12 +5776,14 @@ large_malloc(szone_t *szone, size_t num_kernel_pages, unsigned char alignment,
 	range_to_deallocate.size = 0;
 	range_to_deallocate.address = 0;
 #endif /* LARGE_CACHE */
-
+	
+	//没有找到或者不支持缓存，直接分配一个页面，
 	addr = allocate_pages(szone, size, alignment, szone->debug_flags, VM_MEMORY_MALLOC_LARGE);
 	if (addr == NULL) {
 		return NULL;
 	}
-
+	
+	//分配成功插入到hash表更新页面
 	SZONE_LOCK(szone);
 	if ((szone->num_large_objects_in_use + 1) * 4 > szone->num_large_entries) {
 		// density of hash table too high; grow table
@@ -6202,7 +6197,7 @@ szone_malloc_should_clear(szone_t *szone, size_t size, boolean_t cleared_request
 		if (!msize)
 			msize = 1;
 		ptr = tiny_malloc_should_clear(szone, msize, cleared_requested);
-	} else if (size <= szone->large_threshold) {
+	} else if (size <= szone->large_threshold) {  //127KB
 		// think small
 		msize = SMALL_MSIZE_FOR_BYTES(size + SMALL_QUANTUM - 1);
 		if (!msize)
