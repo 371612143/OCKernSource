@@ -1635,6 +1635,7 @@ bitarray_mclr(uint32_t *bits, unsigned start, unsigned end)
 /*
  * Obtain the size of a free tiny block (in msize_t units).
  */
+#pragma mark tiny-allocater
 static msize_t
 get_tiny_free_size(const void *ptr)
 {
@@ -3681,6 +3682,7 @@ tiny_free_list_check(szone_t *szone, grain_t slot)
  * Mark a block as free.  Only the first quantum of a block is marked thusly,
  * the remainder are marked "middle".
  */
+#pragma mark small-allocater
 static INLINE void
 small_meta_header_set_is_free(msize_t *meta_headers, unsigned index, msize_t msize)
 {
@@ -6077,6 +6079,7 @@ large_try_realloc_in_place(szone_t *szone, void *ptr, size_t old_size, size_t ne
 /*
  * Mark these NOINLINE to avoid bloating the purgeable zone call backs
  */
+#pragma mark scrable-zone
 static NOINLINE void
 szone_free(szone_t *szone, void *ptr)
 {
@@ -6266,10 +6269,6 @@ szone_valloc(szone_t *szone, size_t size)
 		ptr = large_malloc(szone, num_kernel_pages, 0, 0);
 	}
 
-#if DEBUG_MALLOC
-	if (LOG(szone, ptr))
-		malloc_printf("szone_valloc returned %p\n", ptr);
-#endif
 	return ptr;
 }
 
@@ -6286,11 +6285,7 @@ szone_size_try_large(szone_t *szone, const void *ptr)
 		size = entry->size;
 	}
 	SZONE_UNLOCK(szone);
-#if DEBUG_MALLOC
-	if (LOG(szone, ptr)) {
-		malloc_printf("szone_size for %p returned %d\n", ptr, (unsigned)size);
-	}
-#endif
+
 	return size;
 }
 
