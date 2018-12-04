@@ -315,15 +315,15 @@ typedef struct region_trailer
 
 typedef struct tiny_region
 {
-	tiny_block_t blocks[NUM_TINY_BLOCKS];
+	tiny_block_t blocks[NUM_TINY_BLOCKS]; //≈64KB * 32 = 2M
 
-	region_trailer_t trailer;
+	region_trailer_t trailer; //region双向链表指针
 
 	// The interleaved bit arrays comprising the header and inuse bitfields.
 	// The unused bits of each component in the last pair will be initialized to sentinel values.
-	tiny_header_inuse_pair_t pairs[CEIL_NUM_TINY_BLOCKS_WORDS];
+	tiny_header_inuse_pair_t pairs[CEIL_NUM_TINY_BLOCKS_WORDS];  //2016 每个header 32
 
-	uint8_t pad[TINY_REGION_SIZE - (NUM_TINY_BLOCKS * sizeof(tiny_block_t)) - TINY_METADATA_SIZE];
+	uint8_t pad[TINY_REGION_SIZE - (NUM_TINY_BLOCKS * sizeof(tiny_block_t)) - TINY_METADATA_SIZE];  //可用内存序列
 } *tiny_region_t;
 
 /*
@@ -579,19 +579,19 @@ typedef struct {			// vm_allocate()'d, so the array of magazines is page-aligned
 	// Take magazine_lock first,  Depot lock when needed for recirc, then szone->{tiny,small}_regions_lock when needed for alloc
 	_malloc_lock_s		magazine_lock CACHE_ALIGN;
 	// Protection for the crtical section that does allocate_pages outside the magazine_lock
-	volatile boolean_t	alloc_underway;
+	volatile boolean_t	alloc_underway; //是否正在分配内存
 
 	// One element deep "death row", optimizes malloc/free/malloc for identical size.
-	void		*mag_last_free; //上次释放的内存节点  low SHIFT_{TINY,SMALL}_QUANTUM bits indicate the msize
+	void		*mag_last_free; //上次释放的内存节点 low SHIFT_{TINY,SMALL}_QUANTUM bits indicate the msize
 	region_t		mag_last_free_rgn; // holds the region for mag_last_free
 
-	free_list_t		*mag_free_list[256]; // assert( 256 >= MAX( NUM_TINY_SLOTS, NUM_SMALL_SLOTS_LARGEMEM ))
-	unsigned		mag_bitmap[8]; // assert( sizeof(mag_bitmap) << 3 >= sizeof(mag_free_list)/sizeof(free_list_t) )
+	free_list_t		*mag_free_list[256]; //free的空闲内存列表 255存放的是4096字节大小的内存块，采用伙伴内存算法，合成一个完整页面后会将内存提交给操作系统
+	unsigned		mag_bitmap[8]; //mag_free_list 0-256的掩码，对应bit伟为1，表示该slot有对应大小的空闲内存
 
 	// the first and last free region in the last block are treated as big blocks in use that are not accounted for
 	size_t		mag_bytes_free_at_end;
 	size_t		mag_bytes_free_at_start;
-	region_t		mag_last_region; // Valid iff mag_bytes_free_at_end || mag_bytes_free_at_start > 0
+	region_t		mag_last_region; //magazine 的最后一个region
 
 	// bean counting ...
 	unsigned		mag_num_objects;
@@ -602,8 +602,8 @@ typedef struct {			// vm_allocate()'d, so the array of magazines is page-aligned
 	// are located nearer to the head of the list than any region that doesn't satisfy that criteria.
 	// Doubly linked list for efficient extraction.
 	unsigned		recirculation_entries;
-	region_trailer_t	*firstNode;
-	region_trailer_t	*lastNode;
+	region_trailer_t	*firstNode;  //region链表的header
+	region_trailer_t	*lastNode;   //region链表的tail
 
 	uintptr_t		pad[50-CACHE_LINE/sizeof(uintptr_t)];
 } magazine_t;
@@ -657,7 +657,7 @@ typedef struct szone_s {				// vm_allocate()'d, so page-aligned to begin with.
 	int				num_tiny_magazines;
 	unsigned			num_tiny_magazines_mask;
 	int				num_tiny_magazines_mask_shift;
-	magazine_t			*tiny_magazines; // array of per-processor magazines
+	magazine_t			*tiny_magazines; //对应不同cpuid -1为备用 array of per-processor magazines
 	uintptr_t			last_tiny_advise;
 
 	/* Regions for small objects */
@@ -789,7 +789,7 @@ static kern_return_t	tiny_in_use_enumerator(task_t task, void *context, unsigned
 static void		*tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t mag_index,
 											msize_t msize);
 static INLINE void	*tiny_malloc_should_clear(szone_t *szone, msize_t msize, boolean_t cleared_requested) ALWAYSINLINE;
-static INLINE void	free_tiny(szone_t *szone, void *ptr, region_t tiny_region, size_t known_size) ALWAYSINLINE;
+static void	free_tiny(szone_t *szone, void *ptr, region_t tiny_region, size_t known_size);
 static void		print_tiny_free_list(szone_t *szone);
 static void		print_tiny_region(boolean_t verbose, region_t region, size_t bytes_at_start, size_t bytes_at_end);
 static boolean_t	tiny_free_list_check(szone_t *szone, grain_t slot);
@@ -1555,7 +1555,7 @@ recirc_list_splice_first(szone_t *szone, magazine_t *mag_ptr, region_trailer_t *
 #define BITMAPV_SET(bitmap,slot) 	(bitmap[(slot) >> 5] |= 1 << ((slot) & 31))
 #define BITMAPV_CLR(bitmap,slot) 	(bitmap[(slot) >> 5] &= ~ (1 << ((slot) & 31)))
 #define BITMAPV_BIT(bitmap,slot)	((bitmap[(slot) >> 5] >> ((slot) & 31)) & 1)
-#define BITMAPV_CTZ(bitmap)		(__builtin_ctzl(bitmap))
+#define BITMAPV_CTZ(bitmap)		(__builtin_ctzl(bitmap))  //返回右起第一个‘1’之后的0的个数。
 #else
 // assert(NUM_SLOTS == 32) in which case (slot >> 5) is always 0, so code it that way
 #define BITMAPV_SET(bitmap,slot) 	(bitmap[0] |= 1 << (slot))
@@ -2496,40 +2496,24 @@ tiny_free_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t mag_inde
 	free_list_t	*after_next_block;
 	free_list_t	*before_next_block;
 
-#if DEBUG_MALLOC
-	if (LOG(szone,ptr)) {
-		malloc_printf("in tiny_free_no_lock(), ptr=%p, msize=%d\n", ptr, msize);
-	}
-	if (!msize) {
-		szone_error(szone, 1, "trying to free tiny block that is too small", ptr,
-					"in tiny_free_no_lock(), ptr=%p, msize=%d\n", ptr, msize);
-	}
-#endif
+
 
 	// We try to coalesce this block with the preceeding one
-	previous = tiny_previous_preceding_free(ptr, &previous_msize);
+	//尝试找到上移一个内存块，如果已经释放掉则与之合并成一个更大块
+ 	previous = tiny_previous_preceding_free(ptr, &previous_msize);
 	if (previous) {
-#if DEBUG_MALLOC
-		if (LOG(szone, ptr) || LOG(szone,previous)) {
-			malloc_printf("in tiny_free_no_lock(), coalesced backwards for %p previous=%p\n", ptr, previous);
-		}
-#endif
 
 		// clear the meta_header since this is no longer the start of a block
 		set_tiny_meta_header_middle(ptr);
+		//将previous 内存块从freelist 移除，与cur合并
 		tiny_free_list_remove_ptr(szone, tiny_mag_ptr, previous, previous_msize);
 		ptr = previous;
 		msize += previous_msize;
 	}
 	// We try to coalesce with the next block
+	//尝试连接下一个内存块与之合并
 	if ((next_block < TINY_REGION_END(region)) && tiny_meta_header_is_free(next_block)) {
 		next_msize = get_tiny_free_size(next_block);
-#if DEBUG_MALLOC
-		if (LOG(szone, ptr) || LOG(szone, next_block)) {
-			malloc_printf("in tiny_free_no_lock(), for ptr=%p, msize=%d coalesced forward=%p next_msize=%d\n",
-						  ptr, msize, next_block, next_msize);
-		}
-#endif
 		// If we are coalescing with the next block, and the next block is in
 		// the last slot of the free list, then we optimize this case here to
 		// avoid removing next_block from the slot (NUM_TINY_SLOTS - 1) and then adding ptr back
@@ -2675,6 +2659,7 @@ tiny_malloc_from_region_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_in
 	void	*ptr;
 
 	// Deal with unclaimed memory -- mag_bytes_free_at_end or mag_bytes_free_at_start
+	// 处理magazine中暂时无法分配的内存 比如剩余64，但是需要分配65，则需要重新申请一块region，之前64slot的内存放到mag_free_list中
 	if (tiny_mag_ptr->mag_bytes_free_at_end || tiny_mag_ptr->mag_bytes_free_at_start)
 		tiny_finalize_region(szone, tiny_mag_ptr);
 
@@ -2695,6 +2680,7 @@ tiny_malloc_from_region_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_in
 
 	// Check to see if the hash ring of tiny regions needs to grow.  Try to
 	// avoid the hash ring becoming too dense.
+	//更新tiny_region_generation的hash表，将新的region插入
 	if (szone->tiny_region_generation->num_regions_allocated < (2 * szone->num_tiny_regions)) {
 		region_t *new_regions;
 		size_t new_size;
@@ -2737,6 +2723,7 @@ tiny_malloc_from_region_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_in
 #else
 	int offset_msize = 0;
 #endif
+	//更新magazine_t中字节，region数想哥哥信息
 	ptr = (void *)((uintptr_t) aligned_address + TINY_BYTES_FOR_MSIZE(offset_msize));
 	set_tiny_meta_header_in_use(ptr, msize);
 	tiny_mag_ptr->mag_num_objects++;
@@ -2745,6 +2732,7 @@ tiny_malloc_from_region_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_in
 
 	// We put a header on the last block so that it appears in use (for coalescing, etc...)
 	set_tiny_meta_header_in_use_1((void *)((uintptr_t)ptr + TINY_BYTES_FOR_MSIZE(msize)));
+	//更新可用内存 begin end
 	tiny_mag_ptr->mag_bytes_free_at_end = TINY_BYTES_FOR_MSIZE(NUM_TINY_BLOCKS - msize - offset_msize);
 
 #if ASLR_INTERNAL
@@ -2759,12 +2747,6 @@ tiny_malloc_from_region_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_in
 
 	// connect to magazine as last node
 	recirc_list_splice_last(szone, tiny_mag_ptr, REGION_TRAILER_FOR_TINY_REGION(aligned_address));
-
-#if DEBUG_MALLOC
-	if (LOG(szone,ptr)) {
-		malloc_printf("in tiny_malloc_from_region_no_lock(), ptr=%p, msize=%d\n", ptr, msize);
-	}
-#endif
 	return ptr;
 }
 
@@ -3188,7 +3170,7 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 	CHECK_MAGAZINE_PTR_LOCKED(szone, tiny_mag_ptr, __PRETTY_FUNCTION__);
 
 	// Look for an exact match by checking the freelist for this msize.
-	//找到对应大小的空闲链表
+	//找到对应大小slot的空闲链表，如果有内存资源，则返回链表头部节点，把ptr.next作为头部
 	ptr = *the_slot;
 	if (ptr) {
 		next = free_list_unchecksum_ptr(szone, &ptr->next);
@@ -3205,18 +3187,21 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 	// Mask off the bits representing slots holding free blocks smaller than the
 	// size we need.  If there are no larger free blocks, try allocating from
 	// the free space at the end of the tiny region.
+	//通过掩码操作 分析当前mag_free_list 的使用情况
 #if defined(__LP64__)
 	bitmap = ((uint64_t *)(tiny_mag_ptr->mag_bitmap))[0] & ~ ((1ULL << slot) - 1);
 #else
 	bitmap = tiny_mag_ptr->mag_bitmap[0] & ~ ((1 << slot) - 1);
 #endif
+	//如果所有的slot为空尝试从mag_bytes_free_at_end 分配内存
 	if (!bitmap)
 		goto try_tiny_malloc_from_end;
 
-	slot = BITMAPV_CTZ(bitmap);
-	limit = free_list + NUM_TINY_SLOTS - 1;
+	slot = BITMAPV_CTZ(bitmap);  //返回空slot个数
+	limit = free_list + NUM_TINY_SLOTS - 1; //最后一个slot地址
 	free_list += slot;
-
+	
+	//最近的一个非空slot地址 如果小于limit则该slot可以使用，前往分配大块内存
 	if (free_list < limit) {
 		ptr = *free_list;
 		if (ptr) {
@@ -3236,6 +3221,7 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 	// due to coalescing of free blocks, larger than (NUM_TINY_SLOTS - 1) * tiny quantum size.
 	// If the last freelist is not empty, and the head contains a block that is
 	// larger than our request, then the remainder is put back on the free list.
+	//尝试寻找最大的一块slot
 	ptr = *limit;
 	if (ptr) {
 		this_msize = get_tiny_free_size(ptr);
@@ -3293,6 +3279,7 @@ try_tiny_malloc_from_end:
 #endif
 	return NULL;
 
+//找到比分配内存size要大块的内存，将剩余的内存区域存储到对应tiny_mag_ptr->mag_free_list[slot]; slot列表中
 add_leftover_and_proceed:
 	if (!this_msize || (this_msize > msize)) {
 		leftover_msize = this_msize - msize;
@@ -3377,7 +3364,7 @@ tiny_malloc_should_clear(szone_t *szone, msize_t msize, boolean_t cleared_reques
 			}
 			return ptr;
 		}
-		//如果空闲的列表没有资源 则从备用的region中查找
+		//如果空闲的列表没有资源 则从备用的magizine中查找
 		if (tiny_get_region_from_depot(szone, tiny_mag_ptr, mag_index, msize)) {
 			ptr = tiny_malloc_from_free_list(szone, tiny_mag_ptr, mag_index, msize);
 			if (ptr) {
@@ -3397,7 +3384,7 @@ tiny_malloc_should_clear(szone_t *szone, msize_t msize, boolean_t cleared_reques
 		// allocation. After some time the magazine is resupplied, the original thread leaves with its allocation,
 		// and retry-ing threads succeed in the code just above.
 		
-		//如果备用链表也没有内存则尝试重新申请一个region 大小为2M,并从新的region中获取内存
+		//如果备用magazine也没有内存则尝试重新申请一个region 大小为2M,并从新的region中获取内存
 		if (!tiny_mag_ptr->alloc_underway) {
 			void *fresh_region;
 
@@ -3443,7 +3430,7 @@ free_tiny_botch(szone_t *szone, free_list_t *ptr)
 	szone_error(szone, 1, "double free", ptr, NULL);
 }
 
-static INLINE void
+static void
 free_tiny(szone_t *szone, void *ptr, region_t tiny_region, size_t known_size)
 {
 	msize_t	msize;
@@ -3461,12 +3448,6 @@ free_tiny(szone_t *szone, void *ptr, region_t tiny_region, size_t known_size)
 			return;
 		}
 	}
-#if DEBUG_MALLOC
-	if (!msize) {
-		malloc_printf("*** free_tiny() block in use is too large: %p\n", ptr);
-		return;
-	}
-#endif
 
 	SZONE_MAGAZINE_PTR_LOCK(szone, tiny_mag_ptr);
 
@@ -5503,7 +5484,7 @@ large_entries_grow_no_lock(szone_t *szone, vm_range_t *range_to_deallocate)
 	large_entry_t	*old_entries = szone->large_entries;
 	// always an odd number for good hashing
 	unsigned		new_num_entries = (old_num_entries) ? old_num_entries * 2 + 1 :
-	((vm_page_quanta_size / sizeof(large_entry_t)) - 1);
+	((vm_page_quanta_size / sizeof(large_entry_t)) - 1);  //4096/24 - 1 = 169
 	large_entry_t	*new_entries = large_entries_alloc_no_lock(szone, new_num_entries);
 	unsigned		index = old_num_entries;
 	large_entry_t	oldRange;
@@ -5788,8 +5769,7 @@ large_malloc(szone_t *szone, size_t num_kernel_pages, unsigned char alignment,
 	//分配成功插入到hash表更新页面
 	SZONE_LOCK(szone);
 	if ((szone->num_large_objects_in_use + 1) * 4 > szone->num_large_entries) {
-		// density of hash table too high; grow table
-		// we do that under lock to avoid a race
+		//size = 2*size + 1, remap entry
 		large_entry_t *entries = large_entries_grow_no_lock(szone, &range_to_deallocate);
 		if (entries == NULL) {
 			SZONE_UNLOCK(szone);
@@ -5807,7 +5787,7 @@ large_malloc(szone_t *szone, size_t num_kernel_pages, unsigned char alignment,
 	SZONE_UNLOCK(szone);
 
 	if (range_to_deallocate.size) {
-		// we deallocate outside the lock
+		//如果更新了size，分配了新的列表 释放掉旧的列表
 		deallocate_pages(szone, (void *)range_to_deallocate.address, range_to_deallocate.size, 0);
 	}
 	return addr;
@@ -5831,11 +5811,8 @@ free_large(szone_t *szone, void *ptr)
 			boolean_t reusable = TRUE;
 			boolean_t should_madvise = szone->large_entry_cache_reserve_bytes + this_entry.size > szone->large_entry_cache_reserve_limit;
 
-			// Already freed?
-			// [Note that repeated entries in death-row risk vending the same entry subsequently
-			// to two different malloc() calls. By checking here the (illegal) double free
-			// is accommodated, matching the behavior of the previous implementation.]
-			while (1) { // Scan large_entry_cache starting with most recent entry
+			//从最新释放的缓存列表查找，要释放的内存是不是被释放掉了
+			while (1) {
 				if (szone->large_entry_cache[idx].address == entry->address) {
 					szone_error(szone, 1, "pointer being freed already on death-row", ptr, NULL);
 					SZONE_UNLOCK(szone);
@@ -5901,7 +5878,7 @@ free_large(szone_t *szone, void *ptr)
 				return;
 			}
 
-			// Add "entry" to death-row ring
+			//如果可以重复利用 加入大块缓存
 			if (reusable) {
 				int idx = szone->large_entry_cache_newest; // Most recently occupied
 				vm_address_t addr;
@@ -5932,7 +5909,8 @@ free_large(szone_t *szone, void *ptr)
 						adjsize = 0;
 					}
 				}
-
+				
+				//更新缓存列表信息
 				if ((szone->debug_flags & SCALABLE_MALLOC_DO_SCRIBBLE))
 					memset((void *)(entry->address), should_madvise ? SCRUBBLE_BYTE : SCRABBLE_BYTE, entry->size);
 
@@ -5977,7 +5955,8 @@ free_large(szone_t *szone, void *ptr)
 			}
 		}
 #endif /* LARGE_CACHE */
-
+		
+		//缓存失败 释放掉内存
 		szone->num_large_objects_in_use--;
 		szone->num_bytes_in_large_objects -= entry->size;
 
@@ -6155,7 +6134,7 @@ szone_free_definite_size(szone_t *szone, void *ptr, size_t size)
 		szone_error(szone, 1, "Non-aligned pointer being freed", ptr, NULL);
 		return;
 	}
-	if (size <= (NUM_TINY_SLOTS - 1)*TINY_QUANTUM) {
+	if (size <= (NUM_TINY_SLOTS - 1)*TINY_QUANTUM) {  //16*63 < 1kb
 		if (TINY_INDEX_FOR_PTR(ptr) >= NUM_TINY_BLOCKS) {
 			szone_error(szone, 1, "Pointer to metadata being freed", ptr, NULL);
 			return;
@@ -6171,7 +6150,7 @@ szone_free_definite_size(szone_t *szone, void *ptr, size_t size)
 		szone_error(szone, 1, "Non-aligned pointer being freed (2)", ptr, NULL);
 		return;
 	}
-	if (size <= szone->large_threshold) {
+	if (size <= szone->large_threshold) {  //127kb
 		if (SMALL_META_INDEX_FOR_PTR(ptr) >= NUM_SMALL_BLOCKS) {
 			szone_error(szone, 1, "Pointer to metadata being freed (2)", ptr, NULL);
 			return;
@@ -6194,7 +6173,7 @@ szone_malloc_should_clear(szone_t *szone, size_t size, boolean_t cleared_request
 	void	*ptr;
 	msize_t	msize;
 
-	if (size <= (NUM_TINY_SLOTS - 1)*TINY_QUANTUM) {  //63*16
+	if (size <= (NUM_TINY_SLOTS - 1)*TINY_QUANTUM) {  //63*16 小于1K的内存
 		// think tiny
 		msize = TINY_MSIZE_FOR_BYTES(size + TINY_QUANTUM - 1); //(size + 15) >> 4
 		if (!msize)
