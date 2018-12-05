@@ -15,7 +15,7 @@ int main(int argc, const char * argv[]) {
 
     for (int i = 0; i < 255; i++) {
 	for (int j = 0; j < tinyCount; j++) {
-	    memarry[i][j] = malloc(255);
+	    memarry[i][j] = malloc(i);
 	}
 	
     }
@@ -24,7 +24,7 @@ int main(int argc, const char * argv[]) {
 	for (int j = 257; j < 1008; j++) {
 	    tinyarry[i][j-257] = malloc(j);
 	    if (i % 2 == 1) {
-		free(tinyarry[i][j-257]);
+		//free(tinyarry[i][j-257]);
 	    }
 	}
 	
