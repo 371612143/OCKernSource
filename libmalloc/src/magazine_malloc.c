@@ -2518,6 +2518,7 @@ tiny_free_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t mag_inde
 		// the last slot of the free list, then we optimize this case here to
 		// avoid removing next_block from the slot (NUM_TINY_SLOTS - 1) and then adding ptr back
 		// to slot (NUM_TINY_SLOTS - 1).
+		//如果被被释放的内存大于1KB，且是连续的
 		if (next_msize >= NUM_TINY_SLOTS) {
 			msize += next_msize;
 
@@ -2558,7 +2559,7 @@ tiny_free_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t mag_inde
 	tiny_free_list_add_ptr(szone, tiny_mag_ptr, ptr, msize);
 
 tiny_free_ending:
-
+	//更新magazine中内存块信息
 	tiny_mag_ptr->mag_num_objects--;
 	// we use original_size and not msize to avoid double counting the coalesced blocks
 	tiny_mag_ptr->mag_num_bytes_in_objects -= original_size;
@@ -2588,7 +2589,7 @@ tiny_free_ending:
 		// is at least fraction "f" empty.) Such a region will be marked "suitable" on the recirculation list.
 		size_t a = tiny_mag_ptr->num_bytes_in_magazine; // Total bytes allocated to this magazine
 		size_t u = tiny_mag_ptr->mag_num_bytes_in_objects; // In use (malloc'd) from this magaqzine
-
+		//如果空闲内存大于1M则放入备用的内存magazine中
 		if (a - u > ((3 * TINY_REGION_PAYLOAD_BYTES) / 2) && u < DENSITY_THRESHOLD(a)) {
 			return tiny_free_do_recirc_to_depot(szone, tiny_mag_ptr, mag_index);
 		}
@@ -2633,6 +2634,7 @@ tiny_free_ending:
 		}
 
 #if !TARGET_OS_EMBEDDED
+		//如果region中内存没有有被使用且没放到备用magazine，且备用内存magazine不为空 直接释放到操作系统
 		if (0 < bytes_used || 0 < node->pinned_to_depot) {
 			/* Depot'd region is still live. Leave it in place on the Depot's recirculation list
 			 so as to avoid thrashing between the Depot's free list and a magazines's free list
