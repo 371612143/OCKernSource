@@ -3386,7 +3386,7 @@ tiny_malloc_should_clear(szone_t *szone, msize_t msize, boolean_t cleared_reques
 		// allocation. After some time the magazine is resupplied, the original thread leaves with its allocation,
 		// and retry-ing threads succeed in the code just above.
 		
-		//如果备用magazine也没有内存则尝试重新申请一个region 大小为2M,并从新的region中获取内存
+		//如果备用magazine也没有内存则尝试重新申请一个region 大小为1M,并从新的region中获取内存
 		if (!tiny_mag_ptr->alloc_underway) {
 			void *fresh_region;
 

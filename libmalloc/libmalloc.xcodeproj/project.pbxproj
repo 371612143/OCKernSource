@@ -74,13 +74,6 @@
 			remoteGlobalIDString = 3FE91FE716A90AEC00D1238A;
 			remoteInfo = libsystem_malloc;
 		};
-		57C94D6721B0D8A300E14751 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 3FFC1BE516A908F800027192 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 3FE91FE716A90AEC00D1238A;
-			remoteInfo = libsystem_malloc;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -314,7 +307,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				57C94D6821B0D8A300E14751 /* PBXTargetDependency */,
 			);
 			name = testMalloc;
 			productName = testMalloc;
@@ -442,11 +434,6 @@
 			isa = PBXTargetDependency;
 			target = 3FE91FE716A90AEC00D1238A /* libsystem_malloc */;
 			targetProxy = 3FE9201716A9111600D1238A /* PBXContainerItemProxy */;
-		};
-		57C94D6821B0D8A300E14751 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 3FE91FE716A90AEC00D1238A /* libsystem_malloc */;
-			targetProxy = 57C94D6721B0D8A300E14751 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 

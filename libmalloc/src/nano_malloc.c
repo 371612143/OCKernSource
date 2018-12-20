@@ -117,7 +117,7 @@ nano_offset:NANO_OFFSET_BITS;		// locates the block
 };
 #else
 // least significant bits declared first
-struct nano_blk_addr_s {
+struct nano_blk_addr_s {  //在内存地址信息中存储了对应的SIGNATURE，mag，band，slot
 	uint64_t
 nano_offset:NANO_OFFSET_BITS,		// locates the block
 nano_slot:NANO_SLOT_BITS,		// bucket of homogenous quanta-multiple blocks
