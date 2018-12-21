@@ -886,6 +886,7 @@ static void _nano_free_trusted_size_check_scribble(nanozone_t *nanozone, void *p
 		((chained_block_t)ptr)->double_free_guard = (0xBADDC0DEDEADBEADULL ^ nanozone->cookie);
 
 		p.addr = (uint64_t)ptr; // place ptr on the dissecting table
+		//释放nano内存只需要把内存加入到空闲队列
 		pMeta = &(nanozone->meta_data[p.fields.nano_mag_index][p.fields.nano_slot]);
 		OSAtomicEnqueue( &(pMeta->slot_LIFO), ptr, offsetof(struct chained_block_s,next));
 	} else {

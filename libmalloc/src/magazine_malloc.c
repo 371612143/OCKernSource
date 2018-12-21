@@ -3185,11 +3185,7 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 		this_msize = msize;
 		goto return_tiny_alloc;
 	}
-
-	// Mask off the bits representing slots holding free blocks smaller than the
-	// size we need.  If there are no larger free blocks, try allocating from
-	// the free space at the end of the tiny region.
-	//通过掩码操作 分析当前mag_free_list 的使用情况
+	//通过位操作 分析当前mag_free_list 的使用情况
 #if defined(__LP64__)
 	bitmap = ((uint64_t *)(tiny_mag_ptr->mag_bitmap))[0] & ~ ((1ULL << slot) - 1);
 #else
@@ -3366,7 +3362,7 @@ tiny_malloc_should_clear(szone_t *szone, msize_t msize, boolean_t cleared_reques
 			}
 			return ptr;
 		}
-		//如果空闲的列表没有资源 则从备用的magizine中查找
+		//如果空闲的列表没有资源 则从备用的magizine中查找对应的region给现在分配的magazine
 		if (tiny_get_region_from_depot(szone, tiny_mag_ptr, mag_index, msize)) {
 			ptr = tiny_malloc_from_free_list(szone, tiny_mag_ptr, mag_index, msize);
 			if (ptr) {
