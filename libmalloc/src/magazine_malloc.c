@@ -315,7 +315,7 @@ typedef struct region_trailer
 
 typedef struct tiny_region
 {
-	tiny_block_t blocks[NUM_TINY_BLOCKS]; //≈64KB * 32 = 2M
+	tiny_block_t blocks[NUM_TINY_BLOCKS]; //≈64KB * 16 = 1M
 
 	region_trailer_t trailer; //region双向链表指针
 
@@ -589,14 +589,14 @@ typedef struct {			// vm_allocate()'d, so the array of magazines is page-aligned
 	unsigned		mag_bitmap[8]; //mag_free_list 0-256的掩码，对应bit伟为1，表示该slot有对应大小的空闲内存
 
 	// the first and last free region in the last block are treated as big blocks in use that are not accounted for
-	size_t		mag_bytes_free_at_end;
-	size_t		mag_bytes_free_at_start;
+	size_t		mag_bytes_free_at_end;  //上一个region空闲内存首地址
+	size_t		mag_bytes_free_at_start; //上一个region空闲内存尾地址
 	region_t		mag_last_region; //magazine 的最后一个region
 
 	// bean counting ...
-	unsigned		mag_num_objects;
-	size_t		mag_num_bytes_in_objects;
-	size_t		num_bytes_in_magazine;
+	unsigned		mag_num_objects;   //已分配内存块数
+	size_t		mag_num_bytes_in_objects; // In use (malloc'd) from this magaqzine
+	size_t		num_bytes_in_magazine; // Total bytes allocated to this magazine
 
 	// recirculation list -- invariant: all regions owned by this magazine that meet the emptiness criteria
 	// are located nearer to the head of the list than any region that doesn't satisfy that criteria.
@@ -649,8 +649,8 @@ typedef struct szone_s {				// vm_allocate()'d, so page-aligned to begin with.
 
 	/* Regions for tiny objects */
 	_malloc_lock_s	tiny_regions_lock CACHE_ALIGN;
-	size_t			num_tiny_regions;
-	size_t			num_tiny_regions_dealloc;
+	size_t			num_tiny_regions;   //分配给tiny的region，包括释放的
+	size_t			num_tiny_regions_dealloc;  //已释放的tiny_region
 	region_hash_generation_t	*tiny_region_generation;
 	region_hash_generation_t	trg[2];
 
@@ -1934,26 +1934,8 @@ tiny_free_list_add_ptr(szone_t *szone, magazine_t *tiny_mag_ptr, void *ptr, msiz
 	free_list_t	*free_ptr = ptr;
 	free_list_t	*free_head = tiny_mag_ptr->mag_free_list[slot];
 
-#if DEBUG_MALLOC
-	if (LOG(szone,ptr)) {
-		malloc_printf("in %s, ptr=%p, msize=%d\n", __FUNCTION__, ptr, msize);
-	}
-	if (((uintptr_t)ptr) & (TINY_QUANTUM - 1)) {
-		szone_error(szone, 1, "tiny_free_list_add_ptr: Unaligned ptr", ptr, NULL);
-	}
-#endif
 	set_tiny_meta_header_free(ptr, msize);
 	if (free_head) {
-#if DEBUG_MALLOC
-		if (free_list_unchecksum_ptr(szone, &free_head->previous)) {
-			szone_error(szone, 1, "tiny_free_list_add_ptr: Internal invariant broken (free_head->previous)", ptr,
-						"ptr=%p slot=%d free_head=%p previous=%p\n", ptr, slot, (void *)free_head, free_head->previous.p);
-		}
-		if (! tiny_meta_header_is_free(free_head)) {
-			szone_error(szone, 1, "tiny_free_list_add_ptr: Internal invariant broken (free_head is not a free pointer)", ptr,
-						"ptr=%p slot=%d free_head=%p\n", ptr, slot, (void *)free_head);
-		}
-#endif
 		free_head->previous.u = free_list_checksum_ptr(szone, free_ptr);
 	} else {
 		BITMAPV_SET(tiny_mag_ptr->mag_bitmap, slot);
@@ -1977,21 +1959,9 @@ tiny_free_list_remove_ptr(szone_t *szone, magazine_t *tiny_mag_ptr, void *ptr, m
 	next = free_list_unchecksum_ptr(szone, &free_ptr->next);
 	previous = free_list_unchecksum_ptr(szone, &free_ptr->previous);
 
-#if DEBUG_MALLOC
-	if (LOG(szone,ptr)) {
-		malloc_printf("In %s, ptr=%p, msize=%d\n", __FUNCTION__, ptr, msize);
-	}
-#endif
+
 	if (!previous) {
 		// The block to remove is the head of the free list
-#if DEBUG_MALLOC
-		if (tiny_mag_ptr->mag_free_list[slot] != ptr) {
-			szone_error(szone, 1, "tiny_free_list_remove_ptr: Internal invariant broken (tiny_mag_ptr->mag_free_list[slot])", ptr,
-						"ptr=%p slot=%d msize=%d tiny_mag_ptr->mag_free_list[slot]=%p\n",
-						ptr, slot, msize, (void *)tiny_mag_ptr->mag_free_list[slot]);
-			return;
-		}
-#endif
 		tiny_mag_ptr->mag_free_list[slot] = next;
 		if (!next) BITMAPV_CLR(tiny_mag_ptr->mag_bitmap, slot);
 	} else {
@@ -2661,7 +2631,7 @@ tiny_malloc_from_region_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_in
 	void	*ptr;
 
 	// Deal with unclaimed memory -- mag_bytes_free_at_end or mag_bytes_free_at_start
-	// 处理magazine中暂时无法分配的内存 比如剩余64，但是需要分配65，则需要重新申请一块region，之前64slot的内存放到mag_free_list中
+	// 处理magazine中暂时无法分配的内存 比如剩余64，但是需要分配65，则需要重新申请一块region，之前64slot的内存放到mag_free_list中，清理之前region的剩余内存
 	if (tiny_mag_ptr->mag_bytes_free_at_end || tiny_mag_ptr->mag_bytes_free_at_start)
 		tiny_finalize_region(szone, tiny_mag_ptr);
 
@@ -3199,7 +3169,7 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 	limit = free_list + NUM_TINY_SLOTS - 1; //最后一个slot地址
 	free_list += slot;
 	
-	//最近的一个非空slot地址 如果小于limit则该slot可以使用，前往分配大块内存
+	//最近的一个非空slot地址 如果小于limit则该slot可以使用，前往分配内存，并将剩下内存放入freelist
 	if (free_list < limit) {
 		ptr = *free_list;
 		if (ptr) {
