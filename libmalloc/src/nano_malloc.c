@@ -1542,10 +1542,6 @@ nano_try_madvise(nanozone_t *nanozone, size_t goal)
 #endif
 						{
 						    /* -1 return: VM map entry change makes this unfit for reuse. Something evil lurks. */
-#if DEBUG_MADVISE
-						    nanozone_error(nanozone, 0, "madvise(..., MADV_FREE_REUSABLE) failed",
-								    (void *)cwq.addrpgLo, "length=%d\n", vm_page_size);
-#endif
 						} else {
 						    bytes_toward_goal += vm_page_size;
 						    bitarray_set(pMeta->slot_madvised_pages, log_page_count, i);
