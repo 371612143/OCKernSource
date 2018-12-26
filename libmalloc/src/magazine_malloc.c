@@ -264,7 +264,7 @@ typedef int mag_index_t;
 #define CEIL_NUM_TINY_BLOCKS_WORDS	(((NUM_TINY_BLOCKS + 31) & ~31) >> 5)
 #define TINY_METADATA_SIZE		(sizeof(region_trailer_t) + sizeof(tiny_header_inuse_pair_t) * CEIL_NUM_TINY_BLOCKS_WORDS)
 #define TINY_REGION_SIZE							\
-	((NUM_TINY_BLOCKS * TINY_QUANTUM + TINY_METADATA_SIZE + PAGE_MAX_SIZE - 1) & ~ (PAGE_MAX_SIZE - 1))  //64bit 2M
+	((NUM_TINY_BLOCKS * TINY_QUANTUM + TINY_METADATA_SIZE + PAGE_MAX_SIZE - 1) & ~ (PAGE_MAX_SIZE - 1))  //64bit 1M
 
 #define TINY_METADATA_START		(NUM_TINY_BLOCKS * TINY_QUANTUM)
 
@@ -2346,9 +2346,6 @@ tiny_find_msize_region(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t mag
 			return TINY_REGION_FOR_PTR(ptr);
 		else {
 			/* Shouldn't happen. Fall through to look at last slot. */
-#if DEBUG_MALLOC
-			malloc_printf("in tiny_find_msize_region(), mag_bitmap out of sync, slot=%d\n",slot);
-#endif
 		}
 	}
 
