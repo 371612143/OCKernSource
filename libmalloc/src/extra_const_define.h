@@ -16,4 +16,9 @@
 #define _COMM_PAGE_NCPUS			(_COMM_PAGE_START_ADDRESS+0x022)	// uint8_t number of configured CPUs
 #define	_COMM_PAGE_LOGICAL_CPUS			(_COMM_PAGE_START_ADDRESS+0x036)	// uint8_t number of logical CPUs
 #define DEBUG_MALLOC 	1
+
+#ifndef __LP64__
+#define __LP64__
+#define  __LP64__ 1
+#endif
 #endif /* EXTRA_CONST_DEFINE_H */

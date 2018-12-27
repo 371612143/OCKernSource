@@ -305,22 +305,23 @@ typedef struct tiny_header_inuse_pair
 
 typedef struct region_trailer
 {
-	struct region_trailer	*prev;
-	struct region_trailer	*next;
+	struct region_trailer	*prev;  //上一个region
+	struct region_trailer	*next;  //下一个region
 	boolean_t			recirc_suitable;
 	volatile int		pinned_to_depot;
-	unsigned			bytes_used;
-	mag_index_t			mag_index;
+	unsigned			bytes_used;  //已使用的字节数
+	mag_index_t			mag_index;   //对应cpuid
 } region_trailer_t;
 
 typedef struct tiny_region
 {
-	tiny_block_t blocks[NUM_TINY_BLOCKS]; //≈64KB * 16 = 1M
+	tiny_block_t blocks[NUM_TINY_BLOCKS]; //≈64KB * 16 ≈ 1M-16K所有可y以用来分配的内存
 
 	region_trailer_t trailer; //region双向链表指针
 
 	// The interleaved bit arrays comprising the header and inuse bitfields.
 	// The unused bits of each component in the last pair will be initialized to sentinel values.
+	//交错位阵域 用来存储region每块内存大小和使用情况
 	tiny_header_inuse_pair_t pairs[CEIL_NUM_TINY_BLOCKS_WORDS];  //2016 每个header 32
 
 	uint8_t pad[TINY_REGION_SIZE - (NUM_TINY_BLOCKS * sizeof(tiny_block_t)) - TINY_METADATA_SIZE];  //字节对齐
@@ -454,11 +455,11 @@ typedef uint32_t small_block_t[SMALL_QUANTUM/sizeof(uint32_t)];
 
 typedef struct small_region
 {
-	small_block_t blocks[NUM_SMALL_BLOCKS];
+	small_block_t blocks[NUM_SMALL_BLOCKS];  //smallregion中所有可以用来分配内存
 
-	region_trailer_t trailer;
+	region_trailer_t trailer;  //region向链表
 
-	msize_t small_meta_words[NUM_SMALL_BLOCKS];
+	msize_t small_meta_words[NUM_SMALL_BLOCKS];  //n每个内存块大小，使用情况标记的位域
 
 	uint8_t pad[SMALL_REGION_SIZE - (NUM_SMALL_BLOCKS * sizeof(small_block_t)) - SMALL_METADATA_SIZE];
 } *small_region_t;
@@ -589,8 +590,8 @@ typedef struct {			// vm_allocate()'d, so the array of magazines is page-aligned
 	unsigned		mag_bitmap[8]; //mag_free_list 0-256的掩码，对应bit伟为1，表示该slot有对应大小的空闲内存
 
 	// the first and last free region in the last block are treated as big blocks in use that are not accounted for
-	size_t		mag_bytes_free_at_end;  //上一个region空闲内存首地址
-	size_t		mag_bytes_free_at_start; //上一个region空闲内存尾地址
+	size_t		mag_bytes_free_at_end;  //上一个region空闲内存首部可用字节
+	size_t		mag_bytes_free_at_start; //上一个region尾部可用字节数
 	region_t		mag_last_region; //magazine 的最后一个region
 
 	// bean counting ...
@@ -1726,7 +1727,7 @@ get_tiny_meta_header(const void *ptr, boolean_t *is_free)
 	return result;
 }
 
-static INLINE void
+static void
 set_tiny_meta_header_in_use(const void *ptr, msize_t msize)
 {
 	uint32_t	*block_header = TINY_BLOCK_HEADER_FOR_PTR(ptr);
@@ -1734,13 +1735,6 @@ set_tiny_meta_header_in_use(const void *ptr, msize_t msize)
 	msize_t	clr_msize = msize - 1;
 	msize_t	midx = (index >> 5) << 1;
 	uint32_t	val = (1 << (index & 31));
-
-#if DEBUG_MALLOC
-	if (msize >= NUM_TINY_SLOTS)
-		malloc_printf("set_tiny_meta_header_in_use() invariant broken %p %d\n", ptr, msize);
-	if ((unsigned)index + (unsigned)msize > 0x10000)
-		malloc_printf("set_tiny_meta_header_in_use() invariant broken (2) %p %d\n", ptr, msize);
-#endif
 
 	block_header[midx] |= val; // BITARRAY_SET(block_header, index);
 	block_header[midx + 1] |= val; // BITARRAY_SET(in_use, index);
@@ -3177,7 +3171,7 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 	}
 
 try_tiny_malloc_from_end:
-	// Let's see if we can use tiny_mag_ptr->mag_bytes_free_at_end
+	// 从可用region尾部分配内存
 	if (tiny_mag_ptr->mag_bytes_free_at_end >= TINY_BYTES_FOR_MSIZE(msize)) {
 		ptr = (free_list_t *)((uintptr_t)TINY_REGION_END(tiny_mag_ptr->mag_last_region) -
 							  tiny_mag_ptr->mag_bytes_free_at_end);
@@ -3216,6 +3210,7 @@ add_leftover_and_proceed:
 	}
 
 return_tiny_alloc:
+	//更新magazine已用内存和可用内存信息
 	tiny_mag_ptr->mag_num_objects++;
 	tiny_mag_ptr->mag_num_bytes_in_objects += TINY_BYTES_FOR_MSIZE(this_msize);
 
