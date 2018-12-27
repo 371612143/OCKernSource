@@ -323,7 +323,7 @@ typedef struct tiny_region
 	// The unused bits of each component in the last pair will be initialized to sentinel values.
 	tiny_header_inuse_pair_t pairs[CEIL_NUM_TINY_BLOCKS_WORDS];  //2016 每个header 32
 
-	uint8_t pad[TINY_REGION_SIZE - (NUM_TINY_BLOCKS * sizeof(tiny_block_t)) - TINY_METADATA_SIZE];  //可用内存序列
+	uint8_t pad[TINY_REGION_SIZE - (NUM_TINY_BLOCKS * sizeof(tiny_block_t)) - TINY_METADATA_SIZE];  //字节对齐
 } *tiny_region_t;
 
 /*
@@ -1679,7 +1679,7 @@ get_tiny_previous_free_msize(const void *ptr)
 	return 0;
 }
 
-static INLINE msize_t
+static msize_t
 get_tiny_meta_header(const void *ptr, boolean_t *is_free)
 {
 	// returns msize and is_free
@@ -2429,7 +2429,7 @@ tiny_get_region_from_depot(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 #define DENSITY_THRESHOLD(a) \
 	((a) - ((a) >> 2)) // "Emptiness" f = 0.25, so "Density" is (1 - f)*a. Generally: ((a) - ((a) >> -log2(f)))
 
-static INLINE boolean_t
+static boolean_t
 tiny_free_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t mag_index, region_t region, void *ptr,
 				  msize_t msize)
 {
@@ -2442,10 +2442,7 @@ tiny_free_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t mag_inde
 	free_list_t	*after_next_block;
 	free_list_t	*before_next_block;
 
-
-
-	// We try to coalesce this block with the preceeding one
-	//尝试找到上移一个内存块，如果已经释放掉则与之合并成一个更大块
+	//1.尝试找到上移一个内存块，如果已经释放掉则与之合并成一个更大块
  	previous = tiny_previous_preceding_free(ptr, &previous_msize);
 	if (previous) {
 
@@ -2456,15 +2453,14 @@ tiny_free_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t mag_inde
 		ptr = previous;
 		msize += previous_msize;
 	}
-	// We try to coalesce with the next block
-	//尝试连接下一个内存块与之合并
+	//2.尝试连接下一个内存块与之合并
 	if ((next_block < TINY_REGION_END(region)) && tiny_meta_header_is_free(next_block)) {
 		next_msize = get_tiny_free_size(next_block);
 		// If we are coalescing with the next block, and the next block is in
 		// the last slot of the free list, then we optimize this case here to
 		// avoid removing next_block from the slot (NUM_TINY_SLOTS - 1) and then adding ptr back
 		// to slot (NUM_TINY_SLOTS - 1).
-		//如果被被释放的内存大于1KB，且是连续的
+		//如果被被释放的内存大于1KB，且是连续的，继续合并前后内存块
 		if (next_msize >= NUM_TINY_SLOTS) {
 			msize += next_msize;
 
@@ -2496,21 +2492,13 @@ tiny_free_no_lock(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t mag_inde
 		set_tiny_meta_header_middle(next_block); // clear the meta_header to enable coalescing backwards
 		msize += next_msize;
 	}
-
-	// The tiny cache already scribbles free blocks as they go through the
-	// cache whenever msize < TINY_QUANTUM , so we do not need to do it here.
-	if ((szone->debug_flags & SCALABLE_MALLOC_DO_SCRIBBLE) && msize && (msize >= TINY_QUANTUM))
-		memset(ptr, SCRABBLE_BYTE, TINY_BYTES_FOR_MSIZE(msize));
-
+	//4.把释放的空闲内存加入freelist
 	tiny_free_list_add_ptr(szone, tiny_mag_ptr, ptr, msize);
 
 tiny_free_ending:
-	//更新magazine中内存块信息
+	//5.更新magazine中可用内存块信息
 	tiny_mag_ptr->mag_num_objects--;
-	// we use original_size and not msize to avoid double counting the coalesced blocks
 	tiny_mag_ptr->mag_num_bytes_in_objects -= original_size;
-
-	// Update this region's bytes in use count
 	region_trailer_t *node = REGION_TRAILER_FOR_TINY_REGION(region);
 	size_t bytes_used = node->bytes_used - original_size;
 	node->bytes_used = bytes_used;
@@ -2533,13 +2521,12 @@ tiny_free_ending:
 		// Has the entire magazine crossed the "emptiness threshold"? If so, transfer a region
 		// from this magazine to the Depot. Choose a region that itself has crossed the emptiness threshold (i.e
 		// is at least fraction "f" empty.) Such a region will be marked "suitable" on the recirculation list.
+		//6.如果空闲内存a-u>0.5M && U < 0.75a 使用率小于3/4且空闲内存大于1.5M，则放入备用的内存magazine中
 		size_t a = tiny_mag_ptr->num_bytes_in_magazine; // Total bytes allocated to this magazine
 		size_t u = tiny_mag_ptr->mag_num_bytes_in_objects; // In use (malloc'd) from this magaqzine
-		//如果空闲内存大于1.5M则放入备用的内存magazine中
 		if (a - u > ((3 * TINY_REGION_PAYLOAD_BYTES) / 2) && u < DENSITY_THRESHOLD(a)) {
 			return tiny_free_do_recirc_to_depot(szone, tiny_mag_ptr, mag_index);
 		}
-
 	} else {
 #endif
 		// Freed to Depot. N.B. Lock on tiny_magazines[DEPOT_MAGAZINE_INDEX] is already held
@@ -2549,6 +2536,7 @@ tiny_free_ending:
 		uintptr_t round_safe = round_page_quanta(safe_ptr);
 
 		// Calcuate the last page in the coalesced block that would be safe to mark MADV_FREE
+		//7.计算合并之后的内存并释放
 		size_t free_tail_size = sizeof(msize_t);
 		uintptr_t safe_extent = (uintptr_t)ptr + TINY_BYTES_FOR_MSIZE(msize) - free_tail_size;
 		uintptr_t trunc_extent = trunc_page_quanta(safe_extent);
@@ -2580,7 +2568,7 @@ tiny_free_ending:
 		}
 
 #if !TARGET_OS_EMBEDDED
-		//如果region中内存没有有被使用且没放到备用magazine，且备用内存magazine不为空 直接释放到操作系统
+		//8.如果region中内存没有有被使用且没放到备用magazine，且备用内存magazine不为空 直接释放到操作系统
 		if (0 < bytes_used || 0 < node->pinned_to_depot) {
 			/* Depot'd region is still live. Leave it in place on the Depot's recirculation list
 			 so as to avoid thrashing between the Depot's free list and a magazines's free list
@@ -3136,7 +3124,7 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 	if (!bitmap)
 		goto try_tiny_malloc_from_end;
 
-	slot = BITMAPV_CTZ(bitmap);  //返回空slot个数
+	slot = BITMAPV_CTZ(bitmap);  //返回空slot个数，小端字节序，低位在右边
 	limit = free_list + NUM_TINY_SLOTS - 1; //最后一个slot地址
 	free_list += slot;
 	
@@ -3380,7 +3368,7 @@ free_tiny(szone_t *szone, void *ptr, region_t tiny_region, size_t known_size)
 	SZONE_MAGAZINE_PTR_LOCK(szone, tiny_mag_ptr);
 
 #if TINY_CACHE
-	// Depot does not participate in TINY_CACHE since it can't be directly malloc()'d
+	//释放内存slot小于16，可以将mszie存在内存的后4位，并放在lastfree上
 	if (DEPOT_MAGAZINE_INDEX != mag_index) {
 		if (msize < TINY_QUANTUM) { // to see if the bits fit in the last 4 bits
 			void *ptr2 = tiny_mag_ptr->mag_last_free; // Might be NULL
@@ -3419,9 +3407,7 @@ free_tiny(szone_t *szone, void *ptr, region_t tiny_region, size_t known_size)
 	mag_index_t refreshed_index;
 
 	while (mag_index != (refreshed_index = trailer->mag_index)) { // Note assignment
-
 		SZONE_MAGAZINE_PTR_UNLOCK(szone, tiny_mag_ptr);
-
 		mag_index = refreshed_index;
 		tiny_mag_ptr = &(szone->tiny_magazines[mag_index]);
 		SZONE_MAGAZINE_PTR_LOCK(szone, tiny_mag_ptr);
