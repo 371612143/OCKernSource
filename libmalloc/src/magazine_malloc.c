@@ -2535,7 +2535,7 @@ tiny_free_ending:
 		// is at least fraction "f" empty.) Such a region will be marked "suitable" on the recirculation list.
 		size_t a = tiny_mag_ptr->num_bytes_in_magazine; // Total bytes allocated to this magazine
 		size_t u = tiny_mag_ptr->mag_num_bytes_in_objects; // In use (malloc'd) from this magaqzine
-		//如果空闲内存大于1M则放入备用的内存magazine中
+		//如果空闲内存大于1.5M则放入备用的内存magazine中
 		if (a - u > ((3 * TINY_REGION_PAYLOAD_BYTES) / 2) && u < DENSITY_THRESHOLD(a)) {
 			return tiny_free_do_recirc_to_depot(szone, tiny_mag_ptr, mag_index);
 		}
