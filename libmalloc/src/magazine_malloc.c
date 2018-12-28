@@ -425,7 +425,7 @@ typedef struct tiny_region
 
 #define SMALL_METADATA_SIZE		(sizeof(region_trailer_t) + NUM_SMALL_BLOCKS * sizeof(msize_t))
 #define SMALL_REGION_SIZE						\
-	((NUM_SMALL_BLOCKS * SMALL_QUANTUM + SMALL_METADATA_SIZE + PAGE_MAX_SIZE - 1) & ~ (PAGE_MAX_SIZE - 1))
+	((NUM_SMALL_BLOCKS * SMALL_QUANTUM + SMALL_METADATA_SIZE + PAGE_MAX_SIZE - 1) & ~ (PAGE_MAX_SIZE - 1))   //8M
 
 #define SMALL_METADATA_START		(NUM_SMALL_BLOCKS * SMALL_QUANTUM)
 
@@ -455,7 +455,7 @@ typedef uint32_t small_block_t[SMALL_QUANTUM/sizeof(uint32_t)];
 
 typedef struct small_region
 {
-	small_block_t blocks[NUM_SMALL_BLOCKS];  //smallregion中所有可以用来分配内存
+	small_block_t blocks[NUM_SMALL_BLOCKS];  //smallregion中所有可以用来分配内存 8M/(512 + 4字节标记位) 约等于 16320
 
 	region_trailer_t trailer;  //region向链表
 
@@ -688,15 +688,15 @@ typedef struct szone_s {				// vm_allocate()'d, so page-aligned to begin with.
 	large_entry_t		large_entry_cache[LARGE_ENTRY_CACHE_SIZE]; // "death row" for large malloc/free
 	boolean_t			large_legacy_reset_mprotect;
 	size_t			large_entry_cache_reserve_bytes;
-	size_t			large_entry_cache_reserve_limit;
+	size_t			large_entry_cache_reserve_limit;  //16M
 	size_t			large_entry_cache_bytes; //缓存大块内存的总大小
 #endif
 
 	/* flag and limits pertaining to altered malloc behavior for systems with
 	 large amounts of physical memory */
 	unsigned  is_largemem;
-	unsigned  large_threshold;
-	unsigned  vm_copy_threshold;
+	unsigned  large_threshold;   //127K 大于这个数值等于larger
+	unsigned  vm_copy_threshold;  //128k
 
 	/* security cookie */
 	uintptr_t cookie;
@@ -4816,7 +4816,7 @@ return_small_alloc:
 #undef DENSITY_THRESHOLD
 #undef K
 
-static INLINE void *
+static void *
 small_malloc_should_clear(szone_t *szone, msize_t msize, boolean_t cleared_requested)
 {
 	void	*ptr;
@@ -4878,7 +4878,7 @@ small_malloc_should_clear(szone_t *szone, msize_t msize, boolean_t cleared_reque
 			small_mag_ptr->alloc_underway = TRUE;
 			OSMemoryBarrier();
 			SZONE_MAGAZINE_PTR_UNLOCK(szone, small_mag_ptr);
-			fresh_region = allocate_pages_securely(szone, SMALL_REGION_SIZE, SMALL_BLOCKS_ALIGN, VM_MEMORY_MALLOC_SMALL);
+			fresh_region = allocate_pages_securely(szone, SMALL_REGION_SIZE, SMALL_BLOCKS_ALIGN, VM_MEMORY_MALLOC_SMALL);  //8M
 			SZONE_MAGAZINE_PTR_LOCK(szone, small_mag_ptr);
 
 			MAGMALLOC_ALLOCREGION((void *)szone, (int)mag_index, fresh_region, SMALL_REGION_SIZE); // DTrace USDT Probe
@@ -5925,7 +5925,7 @@ szone_malloc_should_clear(szone_t *szone, size_t size, boolean_t cleared_request
 		if (!msize)
 			msize = 1;
 		ptr = tiny_malloc_should_clear(szone, msize, cleared_requested);
-	} else if (size <= szone->large_threshold) {  //127KB
+	} else if (size <= szone->large_threshold) {  //127KB  512*255
 		// think small
 		msize = SMALL_MSIZE_FOR_BYTES(size + SMALL_QUANTUM - 1);
 		if (!msize)
