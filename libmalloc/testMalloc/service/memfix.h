@@ -5,7 +5,7 @@
 // exec_alloc / exec_free 供运算库内部使用
 // AlgNew / AlgFree 供外部模块使用
 // 分配事件在这两个宏中发送，因此不要直接使用 alg_alloc 或其他内部方法
-
+#include<vector>
 #include "mfx_provider.h"
 
 // -------------------------------------------------------------------------- //
