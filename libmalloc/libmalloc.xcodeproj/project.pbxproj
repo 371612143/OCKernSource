@@ -56,6 +56,10 @@
 		3FE9200416A9109E00D1238A /* nano_malloc.c in Sources */ = {isa = PBXBuildFile; fileRef = 3FE91FDA16A90A8D00D1238A /* nano_malloc.c */; };
 		3FE9200516A9109E00D1238A /* stack_logging.c in Sources */ = {isa = PBXBuildFile; fileRef = 3FE91FDB16A90A8D00D1238A /* stack_logging.c */; };
 		3FE9200616A9109E00D1238A /* stack_logging_disk.c in Sources */ = {isa = PBXBuildFile; fileRef = 3FE91FDC16A90A8D00D1238A /* stack_logging_disk.c */; };
+		57883B2E21D613A3000C0E0E /* memfix.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 57883B2821D5CC49000C0E0E /* memfix.cpp */; };
+		57883B2F21D613A6000C0E0E /* mfx_provider.h in Headers */ = {isa = PBXBuildFile; fileRef = 57883B2A21D5CC49000C0E0E /* mfx_provider.h */; };
+		57883B3021D613A9000C0E0E /* mfx_allocator.h in Headers */ = {isa = PBXBuildFile; fileRef = 57883B2B21D5CC49000C0E0E /* mfx_allocator.h */; };
+		57883B3121D613AC000C0E0E /* memfix.h in Headers */ = {isa = PBXBuildFile; fileRef = 57883B2921D5CC49000C0E0E /* memfix.h */; };
 		57C94D6321B0D86500E14751 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 57C94D6221B0D86500E14751 /* main.m */; };
 /* End PBXBuildFile section */
 
@@ -113,8 +117,12 @@
 		3FE91FE816A90AEC00D1238A /* malloc_test.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = malloc_test.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
 		3FE91FF916A90BEF00D1238A /* malloc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = malloc.h; sourceTree = "<group>"; };
 		3FE91FFB16A90E6C00D1238A /* scalable_malloc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = scalable_malloc.h; sourceTree = "<group>"; };
-		3FE9201016A9109E00D1238A /* lib.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = lib.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		3FE9201016A9109E00D1238A /* libetmalloc.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libetmalloc.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		456E51CB197DF0D600A7E488 /* stress_test.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = stress_test.c; path = tests/stress_test.c; sourceTree = "<group>"; };
+		57883B2821D5CC49000C0E0E /* memfix.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = memfix.cpp; sourceTree = "<group>"; };
+		57883B2921D5CC49000C0E0E /* memfix.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = memfix.h; sourceTree = "<group>"; };
+		57883B2A21D5CC49000C0E0E /* mfx_provider.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = mfx_provider.h; sourceTree = "<group>"; };
+		57883B2B21D5CC49000C0E0E /* mfx_allocator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = mfx_allocator.h; sourceTree = "<group>"; };
 		57C94D5B21B0D5AC00E14751 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		57C94D6021B0D86500E14751 /* testMalloc */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = testMalloc; sourceTree = BUILT_PRODUCTS_DIR; };
 		57C94D6221B0D86500E14751 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
@@ -189,7 +197,7 @@
 			isa = PBXGroup;
 			children = (
 				3FE91FE816A90AEC00D1238A /* malloc_test.dylib */,
-				3FE9201016A9109E00D1238A /* lib.a */,
+				3FE9201016A9109E00D1238A /* libetmalloc.a */,
 				57C94D6021B0D86500E14751 /* testMalloc */,
 			);
 			name = Products;
@@ -234,9 +242,21 @@
 			name = tests;
 			sourceTree = "<group>";
 		};
+		57883B2721D5CC49000C0E0E /* service */ = {
+			isa = PBXGroup;
+			children = (
+				57883B2921D5CC49000C0E0E /* memfix.h */,
+				57883B2821D5CC49000C0E0E /* memfix.cpp */,
+				57883B2A21D5CC49000C0E0E /* mfx_provider.h */,
+				57883B2B21D5CC49000C0E0E /* mfx_allocator.h */,
+			);
+			path = service;
+			sourceTree = "<group>";
+		};
 		57C94D6121B0D86500E14751 /* testMalloc */ = {
 			isa = PBXGroup;
 			children = (
+				57883B2721D5CC49000C0E0E /* service */,
 				57C94D6221B0D86500E14751 /* main.m */,
 			);
 			path = testMalloc;
@@ -262,7 +282,10 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				57883B3121D613AC000C0E0E /* memfix.h in Headers */,
+				57883B3021D613A9000C0E0E /* mfx_allocator.h in Headers */,
 				14DB6FA521B1851600443DED /* extra_const_define.h in Headers */,
+				57883B2F21D613A6000C0E0E /* mfx_provider.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -300,7 +323,7 @@
 			);
 			name = libmalloc_eOS;
 			productName = libmalloc;
-			productReference = 3FE9201016A9109E00D1238A /* lib.a */;
+			productReference = 3FE9201016A9109E00D1238A /* libetmalloc.a */;
 			productType = "com.apple.product-type.library.static";
 		};
 		57C94D5F21B0D86500E14751 /* testMalloc */ = {
@@ -413,6 +436,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3FE91FFF16A9109E00D1238A /* bitarray.c in Sources */,
+				57883B2E21D613A3000C0E0E /* memfix.cpp in Sources */,
 				3FE9200116A9109E00D1238A /* magazine_malloc.c in Sources */,
 				3FE9200216A9109E00D1238A /* magmallocProvider.d in Sources */,
 				3FE9200316A9109E00D1238A /* malloc.c in Sources */,
@@ -486,6 +510,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				COMBINE_HIDPI_IMAGES = YES;
+				PRODUCT_NAME = etmalloc;
 			};
 			name = Debug;
 		};
@@ -494,6 +519,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				COMBINE_HIDPI_IMAGES = YES;
+				PRODUCT_NAME = etmalloc;
 			};
 			name = Release;
 		};
