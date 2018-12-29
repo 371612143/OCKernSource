@@ -3095,7 +3095,7 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 	CHECK_MAGAZINE_PTR_LOCKED(szone, tiny_mag_ptr, __PRETTY_FUNCTION__);
 
 	// Look for an exact match by checking the freelist for this msize.
-	//找到对应大小slot的空闲链表，如果有内存资源，则返回链表头部节点，把ptr.next作为头部
+	//1.找到对应大小slot的空闲链表，如果有内存资源，则返回链表头部节点，把ptr.next作为头部
 	ptr = *the_slot;
 	if (ptr) {
 		next = free_list_unchecksum_ptr(szone, &ptr->next);
@@ -3108,13 +3108,13 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 		this_msize = msize;
 		goto return_tiny_alloc;
 	}
-	//通过位操作 分析当前mag_free_list 的使用情况
+	//2.通过位操作 分析当前mag_free_list 的使用情况
 #if defined(__LP64__)
 	bitmap = ((uint64_t *)(tiny_mag_ptr->mag_bitmap))[0] & ~ ((1ULL << slot) - 1);
 #else
 	bitmap = tiny_mag_ptr->mag_bitmap[0] & ~ ((1 << slot) - 1);
 #endif
-	//如果所有的slot为空尝试从mag_bytes_free_at_end 分配内存
+	//3.如果所有的slot为空尝试从mag_bytes_free_at_end 分配内存
 	if (!bitmap)
 		goto try_tiny_malloc_from_end;
 
@@ -3122,7 +3122,7 @@ tiny_malloc_from_free_list(szone_t *szone, magazine_t *tiny_mag_ptr, mag_index_t
 	limit = free_list + NUM_TINY_SLOTS - 1; //最后一个slot地址
 	free_list += slot;
 	
-	//最近的一个非空slot地址 如果小于limit则该slot可以使用，前往分配内存，并将剩下内存放入freelist
+	//4.最近的一个非空slot地址 如果小于limit则该slot可以使用，前往分配内存，并将剩下内存放入freelist
 	if (free_list < limit) {
 		ptr = *free_list;
 		if (ptr) {
