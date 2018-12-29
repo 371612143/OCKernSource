@@ -200,9 +200,7 @@ _dispatch_group_wake(dispatch_group_t dg, bool needs_release)
 {
 	dispatch_continuation_t next, head, tail = NULL;
 	long rval;
-
-	// cannot use os_mpsc_capture_snapshot() because we can have concurrent
-	// _dispatch_group_wake() calls
+	//v遍历groupdg_notify_head， tail中的任务
 	head = os_atomic_xchg2o(dg, dg_notify_head, NULL, relaxed);
 	if (head) {
 		// snapshot before anything is notified/woken <rdar://problem/8554546>
