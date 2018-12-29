@@ -57,7 +57,7 @@ typedef struct semaphore {
 	boolean_t	  active;     /* active status			     */
 } Semaphore;
 
-#define semaphore_lock(semaphore)   waitq_lock(&(semaphore)->waitq)
+#define semaphore_lock(semaphore)   waitq_lock(&(semaphore)->waitq)  //信号量等最终加锁方式 自旋锁
 #define semaphore_unlock(semaphore) waitq_unlock(&(semaphore)->waitq)
 
 extern void semaphore_init(void);

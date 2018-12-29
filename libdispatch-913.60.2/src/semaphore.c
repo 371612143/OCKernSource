@@ -37,17 +37,14 @@ _dispatch_semaphore_class_init(long value, dispatch_semaphore_class_t dsemau)
 	_dispatch_sema4_init(&dsema->dsema_sema, _DSEMA4_POLICY_FIFO);
 }
 
-#pragma mark -
-#pragma mark dispatch_semaphore_t
-
 dispatch_semaphore_t
 dispatch_semaphore_create(long value)
 {
+	//初始只生成了long dsema_value，并初始化dsema_value，之后的signal和waite都是先调用atomic_fetch_add,
+	//or,xor,sub,dec等原子原子操作，当dsema_value<0=0时才懒加载内核信号量，进行加锁
+	//dispatch_group 相当于创建了值为0的信号量，enterdsema_value+1， level dsema_value-1，当dsema_value<0时返回错误
+	//不会用锁进行同步
 	dispatch_semaphore_t dsema;
-
-	// If the internal value is negative, then the absolute of the value is
-	// equal to the number of waiting threads. Therefore it is bogus to
-	// initialize the semaphore with a negative value.
 	if (value < 0) {
 		return DISPATCH_BAD_INPUT;
 	}
@@ -149,7 +146,6 @@ _dispatch_semaphore_wait_slow(dispatch_semaphore_t dsema,
 long
 dispatch_semaphore_wait(dispatch_semaphore_t dsema, dispatch_time_t timeout)
 {
-	//X
 	long value = os_atomic_dec2o(dsema, dsema_value, acquire);
 	if (fastpath(value >= 0)) {
 		return 0;
