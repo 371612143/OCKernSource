@@ -132,6 +132,7 @@ static pthread_t kNilPthreadT = (pthread_t)0;
 #define	CFRUNLOOP_WAKEUP_FOR_WAKEUP_ENABLED() (0)
 #endif
 
+#define DEPLOYMENT_TARGET_MACOSX 1
 // In order to reuse most of the code across Mach and Windows v1 RunLoopSources, we define a
 // simple abstraction layer spanning Mach ports and Windows HANDLES
 #if DEPLOYMENT_TARGET_MACOSX || DEPLOYMENT_TARGET_EMBEDDED || DEPLOYMENT_TARGET_EMBEDDED_MINI
@@ -737,77 +738,6 @@ static Boolean __CFRunLoopModeIsEmpty(CFRunLoopRef rl, CFRunLoopModeRef rlm, CFR
     return true;
 }
 
-#if DEPLOYMENT_TARGET_WINDOWS
-
-uint32_t _CFRunLoopGetWindowsMessageQueueMask(CFRunLoopRef rl, CFStringRef modeName) {
-    if (modeName == kCFRunLoopCommonModes) {
-	CFLog(kCFLogLevelError, CFSTR("_CFRunLoopGetWindowsMessageQueueMask: kCFRunLoopCommonModes unsupported"));
-	HALT;
-    }
-    DWORD result = 0;
-    __CFRunLoopLock(rl);
-    CFRunLoopModeRef rlm = __CFRunLoopFindMode(rl, modeName, false);
-    if (rlm) {
-	result = rlm->_msgQMask;
-	__CFRunLoopModeUnlock(rlm);
-    }
-    __CFRunLoopUnlock(rl);
-    return (uint32_t)result;
-}
-
-void _CFRunLoopSetWindowsMessageQueueMask(CFRunLoopRef rl, uint32_t mask, CFStringRef modeName) {
-    if (modeName == kCFRunLoopCommonModes) {
-	CFLog(kCFLogLevelError, CFSTR("_CFRunLoopSetWindowsMessageQueueMask: kCFRunLoopCommonModes unsupported"));
-	HALT;
-    }
-    __CFRunLoopLock(rl);
-    CFRunLoopModeRef rlm = __CFRunLoopFindMode(rl, modeName, true);
-    rlm->_msgQMask = (DWORD)mask;
-    __CFRunLoopModeUnlock(rlm);
-    __CFRunLoopUnlock(rl);
-}
-
-uint32_t _CFRunLoopGetWindowsThreadID(CFRunLoopRef rl) {
-    return rl->_winthread;
-}
-
-CFWindowsMessageQueueHandler _CFRunLoopGetWindowsMessageQueueHandler(CFRunLoopRef rl, CFStringRef modeName) {
-    if (modeName == kCFRunLoopCommonModes) {
-	CFLog(kCFLogLevelError, CFSTR("_CFRunLoopGetWindowsMessageQueueMask: kCFRunLoopCommonModes unsupported"));
-	HALT;
-    }
-    if (rl != CFRunLoopGetCurrent()) {
-	CFLog(kCFLogLevelError, CFSTR("_CFRunLoopGetWindowsMessageQueueHandler: run loop parameter must be the current run loop"));
-	HALT;
-    }
-    void (*result)(void) = NULL;
-    __CFRunLoopLock(rl);
-    CFRunLoopModeRef rlm = __CFRunLoopFindMode(rl, modeName, false);
-    if (rlm) {
-	result = rlm->_msgPump;
-	__CFRunLoopModeUnlock(rlm);
-    }
-    __CFRunLoopUnlock(rl);
-    return result;
-}
-
-void _CFRunLoopSetWindowsMessageQueueHandler(CFRunLoopRef rl, CFStringRef modeName, CFWindowsMessageQueueHandler func) {
-    if (modeName == kCFRunLoopCommonModes) {
-	CFLog(kCFLogLevelError, CFSTR("_CFRunLoopGetWindowsMessageQueueMask: kCFRunLoopCommonModes unsupported"));
-	HALT;
-    }
-    if (rl != CFRunLoopGetCurrent()) {
-	CFLog(kCFLogLevelError, CFSTR("_CFRunLoopGetWindowsMessageQueueHandler: run loop parameter must be the current run loop"));
-	HALT;
-    }
-    __CFRunLoopLock(rl);
-    CFRunLoopModeRef rlm = __CFRunLoopFindMode(rl, modeName, true);
-    rlm->_msgPump = func;
-    __CFRunLoopModeUnlock(rlm);
-    __CFRunLoopUnlock(rl);
-}
-
-#endif
 
 #pragma mark -
 #pragma mark Sources
@@ -2075,7 +2005,6 @@ CF_EXPORT Boolean _CFRunLoopFinished(CFRunLoopRef rl, CFStringRef modeName) {
 
 static int32_t __CFRunLoopRun(CFRunLoopRef rl, CFRunLoopModeRef rlm, CFTimeInterval seconds, Boolean stopAfterHandle, CFRunLoopModeRef previousMode) __attribute__((noinline));
 
-#if DEPLOYMENT_TARGET_MACOSX || DEPLOYMENT_TARGET_EMBEDDED || DEPLOYMENT_TARGET_EMBEDDED_MINI
 
 #define TIMEOUT_INFINITY (~(mach_msg_timeout_t)0)
 
@@ -2115,63 +2044,6 @@ static Boolean __CFRunLoopServiceMachPort(mach_port_name_t port, mach_msg_header
     HALT;
     return false;
 }
-
-#elif DEPLOYMENT_TARGET_WINDOWS
-
-#define TIMEOUT_INFINITY INFINITE
-
-// pass in either a portSet or onePort
-static Boolean __CFRunLoopWaitForMultipleObjects(__CFPortSet portSet, HANDLE *onePort, DWORD timeout, DWORD mask, HANDLE *livePort, Boolean *msgReceived) {
-    DWORD waitResult = WAIT_TIMEOUT;
-    HANDLE handleBuf[MAXIMUM_WAIT_OBJECTS];
-    HANDLE *handles = NULL;
-    uint32_t handleCount = 0;
-    Boolean freeHandles = false;
-    Boolean result = false;
-    
-    if (portSet) {
-	// copy out the handles to be safe from other threads at work
-	handles = __CFPortSetGetPorts(portSet, handleBuf, MAXIMUM_WAIT_OBJECTS, &handleCount);
-	freeHandles = (handles != handleBuf);
-    } else {
-	handles = onePort;
-	handleCount = 1;
-	freeHandles = FALSE;
-    }
-    
-    // The run loop mode and loop are already in proper unlocked state from caller
-    waitResult = MsgWaitForMultipleObjectsEx(__CFMin(handleCount, MAXIMUM_WAIT_OBJECTS), handles, timeout, mask, MWMO_INPUTAVAILABLE);
-    
-    CFAssert2(waitResult != WAIT_FAILED, __kCFLogAssertion, "%s(): error %d from MsgWaitForMultipleObjects", __PRETTY_FUNCTION__, GetLastError());
-    
-    if (waitResult == WAIT_TIMEOUT) {
-	// do nothing, just return to caller
-	result = false;
-    } else if (waitResult >= WAIT_OBJECT_0 && waitResult < WAIT_OBJECT_0+handleCount) {
-	// a handle was signaled
-	if (livePort) *livePort = handles[waitResult-WAIT_OBJECT_0];
-	result = true;
-    } else if (waitResult == WAIT_OBJECT_0+handleCount) {
-	// windows message received
-        if (msgReceived) *msgReceived = true;
-	result = true;
-    } else if (waitResult >= WAIT_ABANDONED_0 && waitResult < WAIT_ABANDONED_0+handleCount) {
-	// an "abandoned mutex object"
-	if (livePort) *livePort = handles[waitResult-WAIT_ABANDONED_0];
-	result = true;
-    } else {
-	CFAssert2(waitResult == WAIT_FAILED, __kCFLogAssertion, "%s(): unexpected result from MsgWaitForMultipleObjects: %d", __PRETTY_FUNCTION__, waitResult);
-	result = false;
-    }
-    
-    if (freeHandles) {
-	CFAllocatorDeallocate(kCFAllocatorSystemDefault, handles);
-    }
-    
-    return result;
-}
-
-#endif
 
 struct __timeout_context {
     dispatch_source_t ds;
